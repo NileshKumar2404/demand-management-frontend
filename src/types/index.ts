@@ -50,3 +50,10 @@ export interface Notification {
   isRead: boolean
   createdAt: string
 }
+
+export interface ApiResponse<T> {
+  statusCode: number
+  data: T
+  message: string
+  success: boolean
+}
