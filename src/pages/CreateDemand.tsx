@@ -1,92 +1,308 @@
-import { useEffect, useState } from 'react'
-import { ArrowLeft, Save } from 'lucide-react'
-import { useNavigate, useOutletContext } from 'react-router-dom'
+import { ArrowLeft, CheckCircle2, Clock, Info, LoaderCircle, Send, Sparkles } from 'lucide-react'
+import { useState } from 'react'
+import { Link, useNavigate, useOutletContext } from 'react-router-dom'
 import { createDemand } from '../api/demandApi'
-import { getDepartments } from '../api/departmentApi'
 import type { Department, Priority } from '../types'
 
-const priorities: { value: Priority; label: string; days: number }[] = [
-  { value: 'P1', label: 'P1 · Critical', days: 3 },
-  { value: 'P2', label: 'P2 · High', days: 7 },
-  { value: 'P3', label: 'P3 · Medium', days: 15 },
-  { value: 'P4', label: 'P4 · Low', days: 30 },
-  { value: 'P5', label: 'P5 · Planned', days: 60 },
+const PRIORITY_OPTIONS: Array<{
+  id: Priority
+  label: string
+  days: number
+  description: string
+  colorClass: string
+}> = [
+  { id: 'P1', label: 'P1 · Critical', days: 3, description: 'Service down, severe business impact', colorClass: 'p1' },
+  { id: 'P2', label: 'P2 · High', days: 7, description: 'Major feature blocked, critical deadline', colorClass: 'p2' },
+  { id: 'P3', label: 'P3 · Medium', days: 15, description: 'Standard operational or feature demand', colorClass: 'p3' },
+  { id: 'P4', label: 'P4 · Low', days: 30, description: 'Minor enhancement or non-urgent request', colorClass: 'p4' },
+  { id: 'P5', label: 'P5 · Routine', days: 60, description: 'Scheduled maintenance, long-term review', colorClass: 'p5' },
 ]
 
+function calculateDueDate(days: number): string {
+  const d = new Date()
+  d.setDate(d.getDate() + days)
+  return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
+}
+
 export default function CreateDemand() {
-  const { department } = useOutletContext<{ department: Department }>()
   const navigate = useNavigate()
-  const [departments, setDepartments] = useState<Department[]>([])
+  const { department } = useOutletContext<{ department: Department | null }>()
+
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
-  const [targetDepartment, setTargetDepartment] = useState(department._id)
   const [priority, setPriority] = useState<Priority>('P3')
-  const [createdBy, setCreatedBy] = useState(() => localStorage.getItem('performerName') || '')
-  const [loading, setLoading] = useState(false)
+  const [createdBy, setCreatedBy] = useState(() => localStorage.getItem('userDisplayName') || 'Staff Member')
+  const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
-  const [success, setSuccess] = useState('')
+  const [createdDemand, setCreatedDemand] = useState<{ demandNumber: string; _id: string; dueDate: string } | null>(null)
 
-  useEffect(() => {
-    void getDepartments().then(setDepartments).catch((err) => setError(err instanceof Error ? err.message : 'Unable to load departments.'))
-  }, [])
+  const selectedPriorityObj = PRIORITY_OPTIONS.find((p) => p.id === priority) || PRIORITY_OPTIONS[2]
 
-  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!title.trim()) {
+      setError('Please enter a demand title.')
+      return
+    }
+    if (!description.trim()) {
+      setError('Please enter a description for the demand.')
+      return
+    }
+    if (!department?._id) {
+      setError('No department context found. Please select a department.')
+      return
+    }
+
+    setSubmitting(true)
     setError('')
-    setSuccess('')
-    setLoading(true)
+
     try {
-      localStorage.setItem('performerName', createdBy.trim())
-      const demand = await createDemand({
+      localStorage.setItem('userDisplayName', createdBy.trim())
+      const result = await createDemand({
         title: title.trim(),
         description: description.trim(),
-        department: targetDepartment,
+        department: department._id,
         priority,
         createdBy: createdBy.trim(),
       })
-      setSuccess(`${demand.demandNumber} created successfully.`)
-      setTitle('')
-      setDescription('')
-      window.setTimeout(() => navigate(`../demands/${demand._id}`), 700)
+
+      setCreatedDemand({
+        demandNumber: result.demandNumber,
+        _id: result._id,
+        dueDate: result.dueDate,
+      })
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to create demand.')
+      setError(err instanceof Error ? err.message : 'Failed to create demand.')
     } finally {
-      setLoading(false)
+      setSubmitting(false)
     }
   }
 
-  const selected = priorities.find((item) => item.value === priority)!
+  const handleReset = () => {
+    setTitle('')
+    setDescription('')
+    setPriority('P3')
+    setCreatedDemand(null)
+    setError('')
+  }
+
+  if (createdDemand) {
+    return (
+      <div className="demand-success-view">
+        <div className="success-card">
+          <div className="success-icon-badge">
+            <CheckCircle2 size={38} strokeWidth={2.4} />
+          </div>
+          <span className="success-kicker">Demand Submitted & Broadcast</span>
+          <h2>Demand Created Successfully!</h2>
+          <p className="success-demand-number">{createdDemand.demandNumber}</p>
+          <p className="success-subtext">
+            This demand has been registered in the system and automatically broadcast in real time to all devices with notifications enabled.
+          </p>
+
+          <div className="success-meta-box">
+            <div>
+              <span>Department</span>
+              <strong>{department?.name}</strong>
+            </div>
+            <div>
+              <span>Priority Level</span>
+              <strong className={`priority-tag ${priority.toLowerCase()}`}>{priority}</strong>
+            </div>
+            <div>
+              <span>SLA Target Due Date</span>
+              <strong>{new Date(createdDemand.dueDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</strong>
+            </div>
+          </div>
+
+          <div className="success-actions">
+            <Link
+              to={`/department/${department?._id}/demands`}
+              className="primary-button"
+            >
+              View in All Demands
+            </Link>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={handleReset}
+            >
+              Create Another Demand
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
-    <section className="module-page narrow-module">
+    <div className="create-demand-page">
       <div className="page-heading-row">
         <div>
-          <button className="back-link" type="button" onClick={() => navigate('../demands')}><ArrowLeft size={16} /> Back to demands</button>
-          <p className="eyebrow">New work request</p>
-          <h2>Create Demand</h2>
-          <p className="muted">Create a demand for any department. The backend will generate the demand number and SLA due date automatically.</p>
+          <Link to={`/department/${department?._id}/dashboard`} className="back-link">
+            <ArrowLeft size={16} /> Back to dashboard
+          </Link>
+          <h2>Create New Demand</h2>
+          <p className="muted">
+            Submit a new demand request for <strong>{department?.name}</strong>. Demands automatically track priority SLA deadlines.
+          </p>
         </div>
       </div>
 
-      {error && <div className="error-banner">{error}</div>}
-      {success && <div className="success-banner">{success}</div>}
+      <div className="create-demand-layout">
+        <form className="demand-form-card" onSubmit={handleSubmit}>
+          {error && (
+            <div className="form-error-banner">
+              <Info size={18} />
+              <span>{error}</span>
+            </div>
+          )}
 
-      <form className="form-card" onSubmit={handleSubmit}>
-        <div className="form-grid">
-          <label className="form-field full-width"><span>Demand title *</span><input required maxLength={200} value={title} onChange={(event) => setTitle(event.target.value)} placeholder="e.g. Setup faculty onboarding access" /></label>
-          <label className="form-field full-width"><span>Description *</span><textarea required maxLength={5000} rows={6} value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Describe the requirement, expected outcome and relevant details..." /></label>
-          <label className="form-field"><span>Target department *</span><select required value={targetDepartment} onChange={(event) => setTargetDepartment(event.target.value)}>{departments.map((item) => <option key={item._id} value={item._id}>{item.name}</option>)}</select></label>
-          <label className="form-field"><span>Priority *</span><select required value={priority} onChange={(event) => setPriority(event.target.value as Priority)}>{priorities.map((item) => <option key={item.value} value={item.value}>{item.label} · {item.days} days SLA</option>)}</select></label>
-          <label className="form-field full-width"><span>Created by *</span><input required maxLength={100} value={createdBy} onChange={(event) => setCreatedBy(event.target.value)} placeholder="Enter your name" /></label>
-        </div>
+          <div className="form-group">
+            <div className="form-label-row">
+              <label htmlFor="title">Demand Title *</label>
+              <span className="char-count">{title.length}/200</span>
+            </div>
+            <input
+              id="title"
+              type="text"
+              className="form-input"
+              maxLength={200}
+              placeholder="e.g. Server hardware upgrade for rendering pipeline"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              required
+            />
+          </div>
 
-        <div className="sla-preview">
-          <div><strong>{priority}</strong><span>{selected.days}-day SLA</span></div>
-          <p>Due date will be calculated automatically from the creation timestamp.</p>
-        </div>
+          <div className="form-group">
+            <div className="form-label-row">
+              <label htmlFor="description">Detailed Description *</label>
+              <span className="char-count">{description.length}/5000</span>
+            </div>
+            <textarea
+              id="description"
+              className="form-textarea"
+              rows={5}
+              maxLength={5000}
+              placeholder="Describe the demand details, business requirements, expected outcomes, and any specific constraints..."
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              required
+            />
+          </div>
 
-        <div className="form-actions"><button className="secondary-button" type="button" onClick={() => navigate('../demands')}>Cancel</button><button className="primary-button" type="submit" disabled={loading}><Save size={17} /> {loading ? 'Creating...' : 'Create Demand'}</button></div>
-      </form>
-    </section>
+          <div className="form-group">
+            <label>Select Priority & SLA Target *</label>
+            <p className="field-hint">Priority determines the maximum resolution window under our department SLA.</p>
+            <div className="priority-picker-grid">
+              {PRIORITY_OPTIONS.map((opt) => {
+                const isSelected = priority === opt.id
+                return (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    className={`priority-card ${opt.colorClass} ${isSelected ? 'selected' : ''}`}
+                    onClick={() => setPriority(opt.id)}
+                  >
+                    <div className="priority-header">
+                      <span className="priority-chip">{opt.id}</span>
+                      <span className="priority-days">{opt.days} Days SLA</span>
+                    </div>
+                    <span className="priority-desc">{opt.description}</span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          <div className="form-row-two">
+            <div className="form-group">
+              <label htmlFor="createdBy">Requester / Created By *</label>
+              <input
+                id="createdBy"
+                type="text"
+                className="form-input"
+                maxLength={100}
+                placeholder="Your name or employee ID"
+                value={createdBy}
+                onChange={(e) => setCreatedBy(e.target.value)}
+                required
+              />
+            </div>
+
+            <div className="form-group">
+              <label>Target Department Context</label>
+              <input
+                type="text"
+                className="form-input readonly"
+                value={department?.name || 'Department'}
+                readOnly
+                disabled
+              />
+            </div>
+          </div>
+
+          <div className="form-footer-actions">
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() => navigate(`/department/${department?._id}/dashboard`)}
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="primary-button submit-btn"
+              disabled={submitting}
+            >
+              {submitting ? (
+                <>
+                  <LoaderCircle className="spin" size={17} />
+                  <span>Submitting demand...</span>
+                </>
+              ) : (
+                <>
+                  <Send size={16} />
+                  <span>Submit & Broadcast Demand</span>
+                </>
+              )}
+            </button>
+          </div>
+        </form>
+
+        <aside className="demand-sidebar-card">
+          <div className="sidebar-card-header">
+            <Sparkles size={18} className="sparkle-icon" />
+            <h4>SLA Target Preview</h4>
+          </div>
+
+          <div className="sla-preview-box">
+            <span className="preview-label">Selected Priority</span>
+            <div className="preview-priority-badge">
+              <span className={`priority-tag ${selectedPriorityObj.colorClass}`}>
+                {selectedPriorityObj.label}
+              </span>
+            </div>
+            <div className="preview-target-row">
+              <Clock size={16} />
+              <span>Target Completion:</span>
+            </div>
+            <p className="preview-date">{calculateDueDate(selectedPriorityObj.days)}</p>
+            <p className="preview-sla-hint">
+              Work must be completed within <strong>{selectedPriorityObj.days} days</strong> to maintain SLA compliance.
+            </p>
+          </div>
+
+          <div className="realtime-broadcast-note">
+            <div className="broadcast-dot" />
+            <div>
+              <strong>Instant Real-Time Alerts</strong>
+              <p>Submitting this demand broadcasts a notification to all devices currently connected to this workspace.</p>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </div>
   )
 }
